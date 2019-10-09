@@ -1,0 +1,85 @@
+stages:
+  - build
+  - test
+  - e2e_deploy
+  - e2e_test
+  - deploy
+
+.deployment_template: &deployment
+  before_script:
+    - $DEPLOY_ROOT = "D:\GitLab-Runner\environments\$CI_PROJECT_NAME\$CI_ENVIRONMENT_NAME"
+    - $DB_ADDRESS = "Host=localhost;Port=5432;Database=$($CI_PROJECT_NAME)_$($CI_ENVIRONMENT_NAME);"
+    - $PORT_BASE = [int]$PORT_BASE
+    - $PORTS = @{ WEB = $PORT_BASE; SEQ = $PORT_BASE + 2 }
+    - $LOGGER_SETTINGS = @{ Logger = @{ Seq = @{ Port = $PORTS.SEQ } } }
+    - $MIGRATOR_ROOT = "$DEPLOY_ROOT\DbMigrator"
+    - $MIGRATOR_CONNECTION_STRINGS = @{ ConnectionStrings = @{ Default = "$($DB_ADDRESS)User ID=DbMigrator;Password=pass;" } }
+    - $WEB_ROOT = "$DEPLOY_ROOT\Web"
+    - $WEB_CONNECTION_STRINGS = @{ ConnectionStrings = @{ Default = "$($DB_ADDRESS)User ID=manisero;Password=a;" } }
+    - $WEB_SERVICE = "$($CI_PROJECT_NAME)_$($CI_ENVIRONMENT_NAME)_Web"
+  script:
+    - $isStopped = (sc.exe query $WEB_SERVICE | Select-String "STATE" | Select-String "STOPPED") -ne $null
+    - if (-not $isStopped) { net stop $WEB_SERVICE }
+    - if (Test-Path $MIGRATOR_ROOT) { Remove-Item $MIGRATOR_ROOT -Recurse }
+    - Copy-Item "$CI_PROJECT_DIR\src\NewStackPlayground.DbMigrator\bin\Release\netcoreapp2.1\publish\" $MIGRATOR_ROOT -Recurse
+    - ConvertTo-Json $MIGRATOR_CONNECTION_STRINGS > "$MIGRATOR_ROOT\connection_strings.json"
+    - dotnet "$MIGRATOR_ROOT\NewStackPlayground.DbMigrator.dll"
+    - if (Test-Path $WEB_ROOT) { Remove-Item $WEB_ROOT -Recurse }
+    - Copy-Item "$CI_PROJECT_DIR\src\NewStackPlayground.Web\bin\Release\netcoreapp2.1\win7-x64\publish\" $WEB_ROOT -Recurse
+    - ConvertTo-Json $WEB_CONNECTION_STRINGS > "$WEB_ROOT\connection_strings.json"
+    - ConvertTo-Json $LOGGER_SETTINGS > "$WEB_ROOT\logger_settings.json"
+    - sc.exe config $WEB_SERVICE binpath= "$WEB_ROOT\NewStackPlayground.Web.exe --server.urls=http://localhost:$($PORTS.WEB)/"
+    - net start $WEB_SERVICE
+
+build:
+  stage: build
+  script:
+    - cd src
+    - dotnet build -c Release
+    - dotnet publish NewStackPlayground.DbMigrator -c Release --no-build
+    - dotnet publish NewStackPlayground.Web -c Release --no-build
+
+test:
+  stage: test
+  script:
+    - cd src
+    - dotnet test NewStackPlayground.Application.Tests -c Release --no-build
+  variables:
+    GIT_STRATEGY: none
+
+end_to_end_deploy:
+  <<: *deployment
+  stage: e2e_deploy
+  environment:
+    name: EndToEnd
+    url: http://localhost:50010
+  only:
+    - master
+  variables:
+    GIT_STRATEGY: none
+    PORT_BASE: 50010
+
+end_to_end_test:
+  stage: e2e_test
+  before_script:
+    - $TESTS_ROOT = "$CI_PROJECT_DIR\src\NewStackPlayground.EndToEndTests\bin\Debug\netcoreapp2.1"
+    - $APPSETTINGS = @{ WebUrl = "http://localhost:50010" }
+  script:
+    - cd src
+    - dotnet build NewStackPlayground.EndToEndTests
+    - ConvertTo-Json $APPSETTINGS > "$TESTS_ROOT\appsettings.json"
+    - dotnet test NewStackPlayground.EndToEndTests --no-build
+  variables:
+    GIT_STRATEGY: none
+
+deploy_master:
+  <<: *deployment
+  stage: deploy
+  environment:
+    name: Master
+    url: http://localhost:50000
+  only:
+    - master
+  variables:
+    GIT_STRATEGY: none
+    PORT_BASE: 50000

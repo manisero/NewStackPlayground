@@ -1,0 +1,3 @@
+#!/bin/sh
+
+powershell -file $PWD/scripts/commit_db_schema_if_newer.ps1

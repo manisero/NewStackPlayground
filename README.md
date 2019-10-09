@@ -1,2 +1,3 @@
 # NewStackPlayground
-Playing with .NET Core + PostgreSQL + GitLab
+
+Playing with .NET Core + PostgreSQL + GitLab.

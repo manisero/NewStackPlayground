@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="001_Test.sql" />
+    <EmbeddedResource Include="002_Test2.sql" />
+  </ItemGroup>
+
+</Project>
